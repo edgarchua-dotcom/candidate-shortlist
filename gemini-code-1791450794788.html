@@ -3,21 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Candidate Shortlist</title>
+  <title>Candidate Shortlist Review</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    .card-container {
-      perspective: 1000px;
-    }
-    .swipe-card {
-      transition: transform 0.2s ease, opacity 0.2s ease;
-      touch-action: none;
-      user-select: none;
-    }
-    .badge-like, .badge-dislike {
-      opacity: 0;
-      transition: opacity 0.1s ease;
-    }
+    .card-container { perspective: 1000px; }
+    .swipe-card { transition: transform 0.2s ease, opacity 0.2s ease; touch-action: none; user-select: none; }
+    .badge-like, .badge-dislike { opacity: 0; transition: opacity 0.1s ease; }
   </style>
 </head>
 <body class="bg-slate-100 min-h-screen flex flex-col items-center justify-center p-4 font-sans text-slate-800">
@@ -25,24 +16,23 @@
   <!-- Header -->
   <header class="text-center mb-6">
     <h1 class="text-2xl font-bold text-slate-900">Candidate Shortlist Review</h1>
-    <p class="text-sm text-slate-500">Swipe right (or click 👍) to Shortlist | Swipe left (or click 👎) to Pass</p>
+    <p class="text-xs text-slate-500 mt-1">Swipe right to Shortlist | Swipe left to Pass</p>
   </header>
 
   <!-- Card Deck Container -->
   <div class="relative w-full max-w-md h-[580px] card-container">
     
-    <!-- Empty State (Shown when deck is finished) -->
-    <div id="empty-state" class="hidden absolute inset-0 bg-white rounded-2xl shadow-xl flex flex-col items-center justify-center p-6 text-center border border-slate-200">
+    <!-- Empty State -->
+    <div id="empty-state" class="hidden absolute inset-0 bg-white rounded-2xl shadow-xl flex flex-col items-center justify-center p-6 text-center border border-slate-200 z-20">
       <div class="text-5xl mb-4">🎉</div>
       <h2 class="text-xl font-bold text-slate-900 mb-2">All Reviews Complete!</h2>
-      <p class="text-slate-600 text-sm mb-6">Thank you for reviewing the candidate pipeline. Your selections have been saved.</p>
-      <button onclick="exportResults()" class="bg-indigo-600 text-white font-medium px-5 py-2.5 rounded-lg shadow hover:bg-indigo-700 transition">
-        Export / Submit Choices
-      </button>
+      <p class="text-slate-600 text-sm mb-6">Thank you for reviewing the candidate pipeline. Your selections have been saved directly to Google Sheets.</p>
     </div>
 
-    <!-- Cards will be dynamically inserted here -->
-    <div id="deck" class="relative w-full h-full"></div>
+    <!-- Cards Container -->
+    <div id="deck" class="relative w-full h-full flex items-center justify-center">
+      <p id="loading-state" class="text-slate-500 font-medium animate-pulse">Loading candidate cards...</p>
+    </div>
   </div>
 
   <!-- Action Buttons -->
@@ -56,95 +46,137 @@
   </div>
 
   <script>
-    // 1. Candidate Data Structure
-    const candidates = [
-      {
-        id: "c1",
-        name: "Alex Morgan",
-        role: "Senior Product Designer",
-        experience: "8 YOE • Ex-Atlassian, Figma Expert",
-        alignment: [
-          "Proven track record scaling B2B SaaS design systems.",
-          "Strong cross-functional collaboration with engineering leads."
-        ],
-        interviewTopics: [
-          "How they handle trade-offs between speed and design debt.",
-          "Experience conducting unmoderated user research."
-        ],
-        avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400"
-      },
-      {
-        id: "c2",
-        name: "Jordan Lee",
-        role: "Senior Product Designer",
-        experience: "6 YOE • Mobile-First Specialist",
-        alignment: [
-          "Extensive iOS and Android native design portfolio.",
-          "Deep understanding of accessibility standard (WCAG 2.1)."
-        ],
-        interviewTopics: [
-          "Transitioning desktop workflows into mobile native patterns.",
-          "Specific quantitative impact of their recent app redesign."
-        ],
-        avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=400"
-      }
-    ];
+    // Paste your deployed Google Apps Script Web App URL below:
+    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxndofTK_dPjnWvadtrDNQfhIHJBS8_lDt9u-psvzxP2ktyPwV8mF790Xg4VbbXo2yq/exec";
 
-    const results = {};
+    let candidates = [];
+    const results = [];
     let currentIndex = 0;
 
     const deckElement = document.getElementById("deck");
     const emptyState = document.getElementById("empty-state");
 
+    async function fetchCandidates() {
+      try {
+        const res = await fetch(GOOGLE_SCRIPT_URL);
+        const data = await res.json();
+        
+        // Filter out sheet header row
+        candidates = data.filter(c => c.id && c.id.toLowerCase() !== 'id' && c.name.toLowerCase() !== 'name');
+        
+        if (!candidates || candidates.length === 0) {
+          deckElement.innerHTML = `<p class="text-center text-slate-500">No candidate profiles found in Google Sheets.</p>`;
+          return;
+        }
+
+        renderDeck();
+      } catch (err) {
+        deckElement.innerHTML = `<p class="text-center text-red-500 px-4">Failed to load candidates. Check your Apps Script permissions.</p>`;
+      }
+    }
+
     function renderDeck() {
       deckElement.innerHTML = "";
+
       if (currentIndex >= candidates.length) {
         emptyState.classList.remove("hidden");
+        submitResults();
         return;
       }
 
-      // Render top card and next card for smooth stacked look
-      for (let i = Math.min(candidates.length - 1, currentIndex + 1); i >= currentIndex; i--) {
+      const startIdx = Math.min(candidates.length - 1, currentIndex + 1);
+      for (let i = startIdx; i >= currentIndex; i--) {
         const candidate = candidates[i];
-        const isTop = i === currentIndex;
+        const isTop = (i === currentIndex);
         
         const card = document.createElement("div");
         card.className = `swipe-card absolute inset-0 bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden flex flex-col ${isTop ? 'z-10' : 'z-0 scale-95 opacity-50'}`;
         card.id = `card-${i}`;
 
-        card.innerHTML = `
-          <div class="relative h-44 bg-slate-800 flex items-end p-4 text-white">
-            <img src="${candidate.avatar}" class="absolute inset-0 w-full h-full object-cover opacity-60" />
-            <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent"></div>
-            
-            <!-- Swiping Indicators -->
-            <div class="badge-like absolute top-4 left-4 border-4 border-emerald-500 text-emerald-500 font-bold px-3 py-1 rounded text-xl transform -rotate-12">SHORTLIST</div>
-            <div class="badge-dislike absolute top-4 right-4 border-4 border-red-500 text-red-500 font-bold px-3 py-1 rounded text-xl transform rotate-12">PASS</div>
+        // Parse function: Splits exclusively on '•' or newlines and places every point on a new line
+        const parseBullets = (data) => {
+          if (!data) return '';
+          let text = Array.isArray(data) ? data.join('\n') : String(data);
+          let items = text.split(/[•\n]/);
+          
+          return items
+            .map(item => item.trim())
+            .filter(Boolean)
+            .map(item => `<li class="flex items-start gap-2"><span class="text-slate-400 mt-0.5">•</span><span>${item}</span></li>`)
+            .join('');
+        };
 
-            <div class="relative z-10">
-              <h2 class="text-xl font-bold">${candidate.name}</h2>
-              <p class="text-xs text-indigo-300 font-medium">${candidate.role} • ${candidate.experience}</p>
+        const alignmentHtml = parseBullets(candidate.alignment);
+        const topicHtml = parseBullets(candidate.interviewTopics);
+        const experienceHtml = parseBullets(candidate.experience);
+
+        // LinkedIn URL parsing (reads from column G / avatar field)
+        const linkedinUrl = (candidate.avatar && candidate.avatar.trim().startsWith('http')) 
+          ? candidate.avatar.trim() 
+          : null;
+
+        card.innerHTML = `
+          <!-- Header Banner -->
+          <div class="relative h-28 bg-slate-900 flex items-end p-5 text-white overflow-hidden">
+            <div class="absolute inset-0 bg-gradient-to-r from-red-600 via-rose-600 to-slate-950 opacity-90"></div>
+            
+            <div class="badge-like absolute top-3 left-4 border-4 border-emerald-500 text-emerald-500 font-bold px-3 py-1 rounded text-lg transform -rotate-12 z-20">SHORTLIST</div>
+            <div class="badge-dislike absolute top-3 right-4 border-4 border-red-500 text-red-500 font-bold px-3 py-1 rounded text-lg transform rotate-12 z-20">PASS</div>
+
+            <div class="relative z-10 w-full flex items-end justify-between">
+              <div>
+                <h2 class="text-2xl font-bold leading-tight">${candidate.name}</h2>
+                <p class="text-xs text-rose-100 font-medium">${candidate.role}</p>
+              </div>
+
+              ${linkedinUrl ? `
+                <a href="${linkedinUrl}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" class="bg-white/20 hover:bg-white/30 backdrop-blur-md text-white text-[11px] font-semibold px-2.5 py-1 rounded-md flex items-center gap-1 transition">
+                  <svg class="w-3 h-3 fill-current" viewBox="0 0 24 24"><path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.28 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-1.13.71-1.84 1.7-1.84 1.05 0 1.25.8 1.25 1.88v4.89h2.79M6.88 8.56a1.68 1.68 0 0 0 1.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 0 0-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37h2.77z"/></svg>
+                  LinkedIn ↗
+                </a>
+              ` : ''}
             </div>
           </div>
 
-          <div class="p-5 flex-1 overflow-y-auto space-y-4">
-            <div>
-              <h3 class="text-xs font-bold uppercase tracking-wider text-emerald-700 mb-1 flex items-center gap-1">
-                <span>🎯</span> Role Alignment
-              </h3>
-              <ul class="text-xs text-slate-600 space-y-1 list-disc list-inside">
-                ${candidate.alignment.map(point => `<li>${point}</li>`).join('')}
-              </ul>
-            </div>
+          <!-- Body Details Section -->
+          <div class="p-5 flex-1 overflow-y-auto space-y-4 text-xs">
+            
+            <!-- Experience Section -->
+            ${experienceHtml ? `
+              <div>
+                <h3 class="font-bold uppercase tracking-wider text-slate-500 mb-1.5 flex items-center gap-1">
+                  <span>💼</span> Experience
+                </h3>
+                <ul class="text-slate-700 space-y-1.5">
+                  ${experienceHtml}
+                </ul>
+              </div>
+            ` : ''}
 
-            <div class="border-t border-slate-100 pt-3">
-              <h3 class="text-xs font-bold uppercase tracking-wider text-indigo-700 mb-1 flex items-center gap-1">
-                <span>💡</span> Worth Interviewing For
-              </h3>
-              <ul class="text-xs text-slate-600 space-y-1 list-disc list-inside">
-                ${candidate.interviewTopics.map(topic => `<li>${topic}</li>`).join('')}
-              </ul>
-            </div>
+            <!-- Role Alignment Section -->
+            ${alignmentHtml ? `
+              <div class="${experienceHtml ? 'border-t border-slate-100 pt-3' : ''}">
+                <h3 class="font-bold uppercase tracking-wider text-emerald-700 mb-1.5 flex items-center gap-1">
+                  <span>🎯</span> Role Alignment
+                </h3>
+                <ul class="text-slate-700 space-y-1.5">
+                  ${alignmentHtml}
+                </ul>
+              </div>
+            ` : ''}
+
+            <!-- Worth Interviewing For Section -->
+            ${topicHtml ? `
+              <div class="border-t border-slate-100 pt-3">
+                <h3 class="font-bold uppercase tracking-wider text-indigo-700 mb-1.5 flex items-center gap-1">
+                  <span>💡</span> Worth Interviewing For
+                </h3>
+                <ul class="text-slate-700 space-y-1.5">
+                  ${topicHtml}
+                </ul>
+              </div>
+            ` : ''}
+
           </div>
         `;
 
@@ -153,13 +185,13 @@
       }
     }
 
-    // Touch & Mouse Drag Logic
     function setupDrag(card) {
       let startX = 0, currentX = 0, isDragging = false;
       const likeBadge = card.querySelector('.badge-like');
       const dislikeBadge = card.querySelector('.badge-dislike');
 
       const onStart = (e) => {
+        if (e.target.closest('a')) return;
         isDragging = true;
         startX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
       };
@@ -170,7 +202,6 @@
         const rotate = currentX * 0.05;
         card.style.transform = `translateX(${currentX}px) rotate(${rotate}deg)`;
 
-        // Opacity feedback for badges
         if (currentX > 20) {
           likeBadge.style.opacity = Math.min(currentX / 100, 1);
           dislikeBadge.style.opacity = 0;
@@ -186,12 +217,9 @@
       const onEnd = () => {
         if (!isDragging) return;
         isDragging = false;
-        
-        if (currentX > 100) {
-          completeSwipe(true);
-        } else if (currentX < -100) {
-          completeSwipe(false);
-        } else {
+        if (currentX > 100) completeSwipe(true);
+        else if (currentX < -100) completeSwipe(false);
+        else {
           card.style.transform = '';
           likeBadge.style.opacity = 0;
           dislikeBadge.style.opacity = 0;
@@ -201,7 +229,6 @@
       card.addEventListener('mousedown', onStart);
       window.addEventListener('mousemove', onMove);
       window.addEventListener('mouseup', onEnd);
-
       card.addEventListener('touchstart', onStart);
       window.addEventListener('touchmove', onMove);
       window.addEventListener('touchend', onEnd);
@@ -209,7 +236,11 @@
 
     function completeSwipe(isShortlist) {
       const candidate = candidates[currentIndex];
-      results[candidate.id] = { name: candidate.name, status: isShortlist ? 'Shortlisted' : 'Passed' };
+      results.push({
+        id: candidate.id,
+        name: candidate.name,
+        status: isShortlist ? 'Shortlisted' : 'Passed'
+      });
 
       const card = document.getElementById(`card-${currentIndex}`);
       const direction = isShortlist ? 500 : -500;
@@ -223,17 +254,23 @@
     }
 
     function handleButtonAction(isShortlist) {
-      if (currentIndex < candidates.length) {
-        completeSwipe(isShortlist);
+      if (currentIndex < candidates.length) completeSwipe(isShortlist);
+    }
+
+    async function submitResults() {
+      try {
+        await fetch(GOOGLE_SCRIPT_URL, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ decisions: results })
+        });
+      } catch (err) {
+        console.error("Failed to submit choices:", err);
       }
     }
 
-    function exportResults() {
-      console.log("Hiring Manager Selections:", results);
-      alert("Selections captured!\n\n" + JSON.stringify(results, null, 2));
-    }
-
-    renderDeck();
+    fetchCandidates();
   </script>
 </body>
 </html>
